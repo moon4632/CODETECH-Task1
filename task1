@@ -1,0 +1,90 @@
+import os
+import hashlib
+import json
+import time
+
+# File to store the previous hash values
+HASH_DATABASE = "hash_database.json"
+
+def get_file_hash(file_path, algo='sha256'):
+    """Calculate the hash of a file using SHA-256 by default."""
+    hash_func = hashlib.new(algo)
+    try:
+        with open(file_path, 'rb') as f:
+            while chunk := f.read(8192):
+                hash_func.update(chunk)
+        return hash_func.hexdigest()
+    except Exception as e:
+        print(f"[ERROR] Could not read file {file_path}: {e}")
+        return None
+
+def scan_directory_for_hashes(directory):
+    """Walk through directory and compute hashes of all files."""
+    file_hashes = {}
+    for root, _, files in os.walk(directory):
+        for file in files:
+            full_path = os.path.join(root, file)
+            hash_value = get_file_hash(full_path)
+            if hash_value:
+                file_hashes[full_path] = hash_value
+    return file_hashes
+
+def load_previous_hashes():
+    """Load the previous hash records from a JSON file."""
+    if os.path.exists(HASH_DATABASE):
+        with open(HASH_DATABASE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_hashes(hashes):
+    """Save the current hashes to the JSON file."""
+    with open(HASH_DATABASE, 'w') as f:
+        json.dump(hashes, f, indent=2)
+
+def compare_hashes(old_hashes, new_hashes):
+    """Compare old and new hashes to detect changes."""
+    old_files = set(old_hashes.keys())
+    new_files = set(new_hashes.keys())
+
+    added_files = new_files - old_files
+    deleted_files = old_files - new_files
+    modified_files = {
+        file for file in old_files & new_files
+        if old_hashes[file] != new_hashes[file]
+    }
+
+    return added_files, deleted_files, modified_files
+
+def main():
+    directory = input("Enter the directory to monitor: ").strip()
+    if not os.path.isdir(directory):
+        print("[ERROR] Invalid directory.")
+        return
+
+    print(f"\n[INFO] Scanning directory: {directory}")
+    old_hashes = load_previous_hashes()
+    new_hashes = scan_directory_for_hashes(directory)
+
+    added, deleted, modified = compare_hashes(old_hashes, new_hashes)
+
+    print("\n[RESULT] File Integrity Check Report:")
+    if added:
+        print("\n[+] New Files Detected:")
+        for file in added:
+            print(f"  + {file}")
+    if deleted:
+        print("\n[-] Deleted Files Detected:")
+        for file in deleted:
+            print(f"  - {file}")
+    if modified:
+        print("\n[*] Modified Files Detected:")
+        for file in modified:
+            print(f"  * {file}")
+    if not (added or deleted or modified):
+        print("No changes detected. All files are intact.")
+
+    save_hashes(new_hashes)
+    print("\n[INFO] Hash records updated.")
+
+if __name__ == "__main__":
+    main()
